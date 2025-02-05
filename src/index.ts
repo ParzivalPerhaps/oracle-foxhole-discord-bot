@@ -2,12 +2,50 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const { setTimeout } = require('timers/promises');
-import { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ActivityType, Channel, Message, Interaction } from "discord.js";
+import { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ActivityType, Channel, Message, Interaction, User } from "discord.js";
 import OGuildData from "./models/OGuildData";
 import { registerCommands } from "./commands";
+import { Types } from "mongoose";
 const token = process.env.TOKEN;
 
 mongoose.connect(process.env.MONGO_CONNECTION_URI).then(() => {
+
+async function getGuildData(context: Interaction | Message): Promise<any> {
+    let oData = await OGuildData.findOne({ guildId: context.guildId });
+
+    if (!oData && context.guildId){
+        await registerCommands(context.guildId);
+        let currentWarNumber: number = 0;
+
+        try {
+            let wr = (await (await fetch('https://war-service-live.foxholeservices.com/api/worldconquest/war')).json()).warNumber;
+
+            currentWarNumber = wr;
+        } catch (error) {
+            
+        }
+
+        oData = await OGuildData.create({
+            guildId : context.guildId,
+            managementRoles : [],
+            newUserTicketChannel : "-1",
+            currentWar : currentWarNumber,
+            tickets: [],
+        })
+    }
+
+    return oData;
+}
+
+let createTicket = (type: "logistics" | "recruit", users: User[], interaction: Interaction) => {
+    let oData = await getGuildData(interaction);
+
+    if (type == 'logistics'){
+        if (oda)
+    }else if (type == 'recruit'){
+
+    }
+}
 
 let isolateChannelId = (messageId: string) => {
     return messageId.split('/')[5];
@@ -91,28 +129,7 @@ c.on('messageCreate', async (msg: Message) => {
     if (msg.author.bot || !msg.guildId) return;
 
     
-    let oData = await OGuildData.findOne({ guildId: msg.guildId });
-
-    if (!oData){
-        await registerCommands(msg.guildId);
-        let currentWarNumber: number = 0;
-
-        try {
-            let wr = (await (await fetch('https://war-service-live.foxholeservices.com/api/worldconquest/war')).json()).warNumber;
-
-            currentWarNumber = wr;
-        } catch (error) {
-            
-        }
-
-        oData = await OGuildData.create({
-            guildId : msg.guildId,
-            managementRoles : [],
-            newUserTicketChannel : "-1",
-            currentWar : currentWarNumber,
-            tickets: [],
-        })
-    }
+    getGuildData(msg);
     
 
 });
@@ -120,28 +137,7 @@ c.on('messageCreate', async (msg: Message) => {
 c.on('interactionCreate', async (interaction: Interaction) => {
     if (!interaction.isChatInputCommand() || !interaction.guildId) return;
 
-    let oData = await OGuildData.findOne({ guildId: interaction.guildId });
-
-    if (!oData){
-        await registerCommands(interaction.guildId);
-        let currentWarNumber: number = 0;
-
-        try {
-            let wr = (await (await fetch('https://war-service-live.foxholeservices.com/api/worldconquest/war')).json()).warNumber;
-
-            currentWarNumber = wr;
-        } catch (error) {
-            
-        }
-
-        oData = await OGuildData.create({
-            guildId : interaction.guildId,
-            managementRoles : [],
-            newUserTicketChannel : "-1",
-            currentWar : currentWarNumber,
-            tickets: [],
-        })
-    }
+    let oData = await getGuildData(interaction);
 
     if (!interaction.member) return;
 
