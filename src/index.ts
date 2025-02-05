@@ -10,7 +10,7 @@ const token = process.env.TOKEN;
 
 mongoose.connect(process.env.MONGO_CONNECTION_URI).then(() => {
 
-async function getGuildData(context: Interaction | Message): Promise<any> {
+async function checkGuild(context: Interaction | Message) {
     let oData = await OGuildData.findOne({ guildId: context.guildId });
 
     if (!oData && context.guildId){
@@ -33,15 +33,19 @@ async function getGuildData(context: Interaction | Message): Promise<any> {
             tickets: [],
         })
     }
-
-    return oData;
 }
 
-let createTicket = (type: "logistics" | "recruit", users: User[], interaction: Interaction) => {
-    let oData = await getGuildData(interaction);
+let createTicket = async (type: "logistics" | "recruit", users: User[], interaction: Interaction) => {
+    await checkGuild(interaction);
+
+    let oData = await OGuildData.findOne({ guildId: interaction.guildId });
+
+    if (!oData) return;
 
     if (type == 'logistics'){
-        if (oda)
+        if (oData.logisticsTicketChannel){
+            
+        }
     }else if (type == 'recruit'){
 
     }
