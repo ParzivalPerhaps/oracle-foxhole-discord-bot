@@ -22,62 +22,22 @@ export async function registerCommands(guildId: string) {
         ]
     }
     
-    const c_addNewUserManagementRoles = {
-        name: 'add-recruit-management-role',
-        description: 'Give role permissions to access/resolve new user tickets',
-        options: [
-            {
-                name: 'role',
-                description: 'Role to grant access to',
-                type: ApplicationCommandOptionType.Role,
-                required: true
-            }
-        ]
-    }
-    
-    
-    const c_removeNewUserManagementRoles = {
-        name: 'remove-recruit-management-role',
-        description: 'Set who can access/resolve new user tickets',
-        options: [
-            {
-                name: 'role',
-                description: 'Role to revoke access from',
-                type: ApplicationCommandOptionType.Role,
-                required: true
-            }
-        ]
-    }
-    
     const c_setNewUserTicketChannel = {
         name: 'set-recruit-ticket-channel',
         description: 'Set the output channel for new user tickets',
         options: [
             {
                 name: 'channel',
-                description: 'Channel to be the output channel for new user tickets',
+                description: 'Set the channel where new user ticket notifications are sent',
                 type: ApplicationCommandOptionType.Channel,
                 required: true
             }
         ]
     }
     
-    const c_resolveNewUserTicket = {
-        name: 'resolve-new-user-ticket',
-        description: 'Mark resolved and archive new user ticket in channel (by default current channel)',
-        options: [
-            {
-                name: 'channel',
-                description: 'Ticket channel to be resolved',
-                type: ApplicationCommandOptionType.Channel,
-                required: false
-            }
-        ]
-    }
-    
     const c_setLogisticsTicketChannel = {
         name: 'set-logi-ticket-channel',
-        description: 'Set the channel where new logistics tickets are sent',
+        description: 'Set the channel where new logistics ticket notifications are sent',
         options: [
             {
                 name: 'channel',
@@ -90,26 +50,8 @@ export async function registerCommands(guildId: string) {
     
     const c_createNewLogisticsTicket = {
         name: 'create-logistics-ticket',
-        description: 'Create new logistics ticket',
+        description: 'Start logistics ticket builder',
         options: [
-            {
-                name: 'logi-type',
-                description: 'Type of logistics you need',
-                type: ApplicationCommandOptionType.String,
-                choices: [
-                    { name: 'Equipment', value: 'equipment' },
-                    { name: 'Ammo', value: 'ammo' },
-                    { name: 'Resource', value: 'resources' },
-                    { name: 'Delivery', value: 'delivery' },
-                ],
-                required: true
-            },
-            {
-                name: 'quantity',
-                description: 'How many units of selected logistics item you need',
-                type: ApplicationCommandOptionType.Integer,
-                required: true
-            },
             {
                 name: 'location',
                 description: 'Location for delivery of logistics',
@@ -176,9 +118,9 @@ export async function registerCommands(guildId: string) {
     }
     
     
-    const c_resolveLogisticsTicket = {
-        name: 'resolve-logistics-ticket',
-        description: 'Resolve logistics ticket',
+    const c_resolveTicket = {
+        name: 'resolve-ticket',
+        description: 'Resolve logistics/new-user ticket at specified channel (current channel by default)',
         options: [
             {
                 name: 'note',
@@ -238,24 +180,134 @@ export async function registerCommands(guildId: string) {
             }
         ]
     }
+
+    const c_setActiveRole = {
+        name: 'set-active-role',
+        description: 'Set active role reference',
+        options: [
+            {
+                name: 'role',
+                description: 'Role to assign active members of a war',
+                type: ApplicationCommandOptionType.Role,
+                required: true
+            }
+        ]
+    }
+
+    const c_setInactiveRole = {
+        name: 'set-inactive-role',
+        description: 'Set active role reference',
+        options: [
+            {
+                name: 'role',
+                description: 'Role to assign inactive members of a war',
+                type: ApplicationCommandOptionType.Role,
+                required: true
+            }
+        ]
+    }
+
+    const c_enlist = {
+        name: 'enlist',
+        description: 'Enlist in current war',
+    }
+
+    const c_logisticsBuilderAddRequest = {
+        name: 'lb-add',
+        description: 'Add resource request to current logistics request',
+        options: [
+            {
+                name: 'resource',
+                description: 'Name of resource (people will have to type this out to mark deliveries so keep it short)',
+                type: ApplicationCommandOptionType.String,
+                required: true
+            },
+            {
+                name: 'amount',
+                description: 'Amount of resource required in total',
+                type: ApplicationCommandOptionType.Integer,
+                required: true
+            },
+        ]
+    }
+
+    const c_logisticsBuilderRemoveRequest = {
+        name: 'lb-remove',
+        description: 'Remove resource request from current logistics request',
+        options: [
+            {
+                name: 'resource',
+                description: 'Name of resource (not case-sensitive)',
+                type: ApplicationCommandOptionType.String,
+                required: true
+            },
+            {
+                name: 'amount',
+                description: 'Amount of resource request to remove (defaults to all)',
+                type: ApplicationCommandOptionType.Integer,
+                required: false
+            },
+        ]
+    }
+
+    const c_deliver = {
+        name: 'deliver',
+        description: 'Deliver resources to a logistics request ticket',
+        options: [
+            {
+                name: 'resource',
+                description: 'Name of resource (not case-sensitive)',
+                type: ApplicationCommandOptionType.String,
+                required: true
+            },
+            {
+                name: 'amount',
+                description: 'Amount of resources delivered',
+                type: ApplicationCommandOptionType.Integer,
+                required: true
+            },
+        ]
+    }
+
+    const c_logisticsBuilderCompleteRequest = {
+        name: 'lb-complete',
+        description: 'Complete logistics ticket',
+    }
+
+    const c_logisticsBuilderViewRequest = {
+        name: 'lb-view',
+        description: 'View current logistics request',
+    }
+
+    const c_logisticsBuilderDiscrdRequest = {
+        name: 'lb-discard',
+        description: 'Discard current logistics request',
+    }
     
     
     
     
     const cList: any[] = [
         c_startNewWar,
-        c_addNewUserManagementRoles,
         c_setNewUserTicketChannel,
-        c_resolveNewUserTicket,
-        c_removeNewUserManagementRoles,
+        c_resolveTicket,
         c_setLogisticsTicketChannel,
         c_createNewLogisticsTicket,
         c_reportLogisticsDelivery,
         c_editLogisticsTicket,
-        c_resolveLogisticsTicket,
         c_startActivityReminder,
         c_stopActivityReminder,
+        c_setActiveRole,
+        c_setInactiveRole,
+        c_enlist,
+        c_logisticsBuilderAddRequest,
+        c_logisticsBuilderRemoveRequest,
+        c_logisticsBuilderCompleteRequest,
+        c_logisticsBuilderViewRequest,
+        c_logisticsBuilderDiscrdRequest,
+        c_deliver
     ];
+
     
     if (!process.env.TOKEN || !process.env.CLIENT) {
         console.error("Please set TOKEN and CLIENT .env variables");
