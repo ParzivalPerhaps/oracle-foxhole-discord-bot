@@ -2,14 +2,14 @@ const mongoose = require('mongoose');
 require('dotenv').config();
 
 const { setTimeout } = require('timers/promises');
-import { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ActivityType, Channel, Message, Interaction, User, GuildMemberRoleManager, ChannelType, PermissionOverwrites } from "discord.js";
+import { Client, IntentsBitField, EmbedBuilder, PermissionsBitField, ActivityType, Channel, Message, Interaction, User, GuildMemberRoleManager, ChannelType, PermissionOverwrites, time } from "discord.js";
 import OGuildData from "./models/OGuildData";
 import { registerCommands } from "./commands";
 import { Types } from "mongoose";
 import Ticket from "./models/Ticket";
 const token = process.env.TOKEN;
 
-const version = "0.1.11";
+const version = "0.1.20";
 
 mongoose.connect(process.env.MONGO_CONNECTION_URI).then(() => {
 
@@ -117,7 +117,7 @@ if (!c) {
 c.on('ready', async () => {
     if (!c.user) return;
 
-    console.log('Oracle FX Started...');
+    console.log('Oracle Started...');
 
     let currentWarNumber: number = 0;
 
@@ -131,12 +131,117 @@ c.on('ready', async () => {
 
     c.user.setPresence({ 
         activities: [{ 
-            name: currentWarNumber != 0 ? `War ${currentWarNumber}` : 'The Good Fight', 
+            name: currentWarNumber != 0 ? `War ${currentWarNumber}A` : 'The Good Fight', 
             type: ActivityType.Competing, 
         }], 
         status: 'online' 
     });
 });
+
+c.on('guildMemberAdd', async member => {
+    try {
+        let oData = await OGuildData.findOne({ guildId: member.guild.id });
+
+        if (!oData) return;
+
+        let t = await Ticket.findOne({
+            author: member.user.username,
+            newUserTicket: true
+        })
+
+        if (t){
+            member.roles.add(t.ticketRoleId);
+            return;
+        }
+
+        let cat = member.client.channels.cache.find((v) => {return v.type == ChannelType.GuildCategory && v.name == "Oracle Logi Tickets"});
+
+            if (!cat){
+                cat = await member.guild.channels.create({
+                    name: "Oracle User Tickets",
+                    type: ChannelType.GuildCategory,
+                    // your permission overwrites or other options here
+                });
+            }
+
+            let ticketId = Math.random().toString(36).slice(2, 6);
+
+            while ((await Ticket.findOne({ticketId: ticketId}))){
+                ticketId = Math.random().toString(36).slice(2, 6);
+            }
+
+            const rl = await member.guild.roles.create({
+                name: "user-ticket-" + ticketId
+            });
+
+            const perms = (member.guild.roles.cache.map((v) => {
+                if (v.permissions.has("ManageRoles")){
+                    return {id: v.id, allow: ["ViewChannel"]}
+                }
+
+            }) as any[]).concat([{
+                id: member.guild.roles.everyone.id, 
+                deny: ["ViewChannel"]
+            },
+            {
+                id: rl.id, 
+                allow: ["ViewChannel"]
+            }] as any[])
+
+            const chnl = await member.guild.channels.create({
+                name: "user-ticket-" + ticketId,
+                type: ChannelType.GuildText,
+                parent: cat.id,
+                permissionOverwrites: perms
+                // your permission overwrites or other options here
+            });
+
+        t = await Ticket.create({
+            author: member.user.username,
+            newUserTicket: true,
+            transcript: [],
+            guildId: member.guild.id,
+            channelId: chnl.id,
+            ticketRoleId: rl.id,
+            ticketId: ticketId,
+            complete: true,
+            closed: false
+        });
+
+        const newUserEmbed = createOracleEmbed("Welcome to the 105th!", "We appreciate your patience! Please drop your F1 Screenshot so we can confirm you are a colonial, not a baby-eating warden. Please also read ⁠facility-intro ⁠tanks ⁠artillery while you wait to speed up the process. We require our new members to read those articles. OFFICERS, PLEASE ONLY GIVE THEM THE ENLISTED ROLE WHEN VETTED THEY WILL HAVE 105th Certified WHEN READY TO VETT.", []
+                , "");
+
+        chnl.send({ embeds: [newUserEmbed], components: [
+            {
+                type: 1,
+                components: [
+                    {
+                        type: 2,
+                        style: 2,
+                        label: "Resolve Ticket",
+                        custom_id: "resolve_user_ticket_" + t.ticketId
+                    }
+                ]
+            }
+        ]})
+
+        if (oData.newUserTicketChannel){
+            const ticketChannel = await c.channels.fetch(oData.newUserTicketChannel);
+
+            if (ticketChannel && ticketChannel.isTextBased()){
+                const newUserTicketEmbed = createOracleEmbed("New User: Active Ticket (" + (t.ticketId) + ")", "A new user has joined and a new ticket has been started <#" + (t.channelId) + ">.", []
+                    , "");
+
+                await ticketChannel.send({
+                    embeds: [newUserTicketEmbed]
+                })
+            }
+        }
+    } catch (error) {
+        
+    }
+});
+
 
 c.on('messageCreate', async (msg: Message) => {
     if (msg.author.bot || !msg.guildId) return;
@@ -162,7 +267,90 @@ c.on('interactionCreate', async (interaction: Interaction) => {
     let oData = await OGuildData.findOne({ guildId: interaction.guildId });
 
     if (interaction.isButton()){
-        if (interaction.customId.startsWith('join_logi_ticket_')){
+        
+        if (interaction.customId.startsWith('resolve_user_ticket_') && oData){
+            let ticketId = interaction.customId.substring(interaction.customId.length - 4, interaction.customId.length);
+
+            if ((interaction.member?.permissions as Readonly<PermissionsBitField>).has("ManageChannels")){
+                const t = await Ticket.findOne({
+                    ticketId: interaction.customId.substring(interaction.customId.length - 4, interaction.customId.length)
+                })
+    
+                if (!t){
+                    interaction.reply({content: "*Error finding ticket*", ephemeral: true})
+                    return
+                }
+
+                const q = c.channels.cache.get(t.channelId);
+
+               if (q && q.type == ChannelType.GuildText){
+
+                const logiChannelEmbed = createOracleEmbed('User Ticket Resolved (' + t.author + ") - " + t.ticketId , "**New User Ticket resolved, order has been marked resolved by officer (" + interaction.user.username + ")", 
+                    t.logisticsTypes?.map((v, i) => {
+                        if (!t || !t.demanded || !t.delivered) return {name: "A", value: "A"};
+                        return {name: v.toString(), value: t.delivered[i].toString() + " / " + t.demanded[i].toString()}
+                    }) as {value: string, name: string}[] , "");
+                
+
+                if (t.ticketPostEmbed && t.ticketPostChannel){
+                    const p = await c.channels.fetch(t.ticketPostChannel);
+                    if (!p || !p.isTextBased()) return;
+
+                    await p.messages.fetch(t.ticketPostEmbed).then(async msg => {
+                        if (!msg) return;
+    
+                        await (msg as any).edit({embeds: [logiChannelEmbed], components: []})
+                    });    
+                }
+               
+               }
+
+               if (!interaction.guild) return;
+
+               const users = await interaction.guild.members.list();
+
+               const transcriptEmbed = createOracleEmbed('New User Ticket (' + t.ticketId + ") - Transcript" , "This ticket was recently closed, here's a transcript of the discussion:\n\n" + (t.transcript.length > 0 ? t.transcript.join("\n\n") : "*No messages were sent*"), 
+                        [] , "");
+
+                for (let i = 0; i < users.size; i++) {
+                    if (users.at(i)?.roles.cache.some((v) => {return v.id == t.ticketRoleId})) {
+                        await users.at(i)?.send({
+                            embeds: [
+                                transcriptEmbed
+                            ]
+                        })
+                    }
+                }
+
+                if (oData.logChannel){
+                    const b = await c.channels.fetch(oData.logChannel);
+
+                    if (b && b.isTextBased()){
+                        await b.send({
+                            embeds: [
+                                transcriptEmbed
+                            ]
+                        })
+                    }
+                }
+
+                const rle = await interaction.guild.roles.fetch(t.ticketRoleId);
+
+                if (rle){
+                    await rle.delete();
+                }
+                
+                if (q){
+                    await q.delete()
+                }
+
+                await t.updateOne({
+                    closed: true
+                });
+            }else{
+                interaction.reply({content: "*Insufficient permissions - Manage Channel permissions required to force resolve ticket*", ephemeral: true})
+            }
+        } else if (interaction.customId.startsWith('join_logi_ticket_')){
             let ticketId = interaction.customId.substring(interaction.customId.length - 4, interaction.customId.length);
 
             const tckt = await Ticket.findOne({
@@ -223,6 +411,182 @@ c.on('interactionCreate', async (interaction: Interaction) => {
 
             await t.deleteOne();
             interaction.reply({content: "*Current builder discarded, start a new ticket by running the **/create-logistics-ticket** command*", ephemeral: true})
+        }else if (interaction.customId.startsWith("force_resolve_logi_ticket_") && oData){
+            if ((interaction.member?.permissions as Readonly<PermissionsBitField>).has("ManageChannels")){
+                const t = await Ticket.findOne({
+                    ticketId: interaction.customId.substring(interaction.customId.length - 4, interaction.customId.length)
+                })
+    
+                if (!t){
+                    interaction.reply({content: "*Error finding ticket*", ephemeral: true})
+                    return
+                }
+
+                const q = c.channels.cache.get(t.channelId);
+
+               if (q && q.type == ChannelType.GuildText){
+
+                const logiChannelEmbed = createOracleEmbed('Logistics Ticket [COMPLETE] (' + t.location + ") - " + t.ticketId , "**Logistics order complete**, Logistics order has been marked resolved by officer (" + interaction.user.username + ")", 
+                    t.logisticsTypes?.map((v, i) => {
+                        if (!t || !t.demanded || !t.delivered) return {name: "A", value: "A"};
+                        return {name: v.toString(), value: t.delivered[i].toString() + " / " + t.demanded[i].toString()}
+                    }) as {value: string, name: string}[] , "");
+                
+
+                if (t.ticketPostEmbed && t.ticketPostChannel){
+                    const p = await c.channels.fetch(t.ticketPostChannel);
+                    if (!p || !p.isTextBased()) return;
+
+                    await p.messages.fetch(t.ticketPostEmbed).then(async msg => {
+                        if (!msg) return;
+    
+                        await (msg as any).edit({embeds: [logiChannelEmbed], components: []})
+                    });    
+                }
+               
+               }
+
+               if (!interaction.guild) return;
+
+               const users = await interaction.guild.members.list();
+
+               const transcriptEmbed = createOracleEmbed('Logistics Ticket (' + t.ticketId + ") - Transcript" , "This ticket was recently closed, here's a transcript of the discussion:\n\n" + (t.transcript.length > 0 ? t.transcript.join("\n\n") : "*No messages were sent*"), 
+                        [] , "");
+
+                for (let i = 0; i < users.size; i++) {
+                    if (users.at(i)?.roles.cache.some((v) => {return v.id == t.ticketRoleId})) {
+                        await users.at(i)?.send({
+                            embeds: [
+                                transcriptEmbed
+                            ]
+                        })
+                    }
+                }
+
+                if (oData.logChannel){
+                    const b = await c.channels.fetch(oData.logChannel);
+
+                    if (b && b.isTextBased()){
+                        await b.send({
+                            embeds: [
+                                transcriptEmbed
+                            ]
+                        })
+                    }
+                }
+
+                const rle = await interaction.guild.roles.fetch(t.ticketRoleId);
+
+                if (rle){
+                    await rle.delete();
+                }
+                
+                if (q){
+                    await q.delete()
+                }
+
+                await t.updateOne({
+                    closed: true
+                });
+            }else{
+                interaction.reply({content: "*Insufficient permissions - Manage Channel permissions required to force resolve ticket*", ephemeral: true})
+            }
+        }else if (interaction.customId == 'enlist' && oData && interaction.member){
+            const activeRole = oData.activeRole;
+            const inactiveRole = oData.inactiveRole;
+
+            if (!activeRole) {
+                interaction.reply({content: '*Error: Active Role has not been configured*', ephemeral: true});
+                return;
+            }
+
+            if (!inactiveRole) {
+                interaction.reply({content: '*Error: Inactive Role has not been configured*', ephemeral: true});
+                return;
+            }
+
+            if ((interaction.member.roles as GuildMemberRoleManager).cache.some((v) => {return v.id == activeRole})){
+                interaction.reply({content: `*You've already enlisted! Get out there and fight*`, ephemeral: true});
+                return;
+            }else{
+                (interaction.member.roles as GuildMemberRoleManager).add(activeRole);
+                interaction.reply({content: '*Successfully signed up for war ' + (oData.currentWar) +' *', ephemeral: true});
+                return;
+            }
+        }else if (interaction.customId.startsWith('reset_reminder_') && oData && interaction.member){
+            console.log(interaction);
+            
+            const reminderIndex = oData.activityReminderIds?.indexOf(interaction.customId.substring(15, interaction.customId.length));
+            if (reminderIndex == -1 || !reminderIndex || !oData.activityReminderRoles) {
+                interaction.reply({content: "Error finding reminder", ephemeral: true})
+                return
+            };
+
+            console.log(oData);
+            
+
+            const rl = await interaction.guild?.roles.fetch(oData.activityReminderRoles[reminderIndex]);
+            const newReminderId = Math.random().toString(36).slice(2, 21);
+
+            if (rl && (interaction.member.roles as GuildMemberRoleManager).cache.has(rl.id)){
+                let q = oData.activityReminderRoles;
+                let z = oData.activityReminderRolesTimeLimit;
+                let m = oData.activityReminderTimeStarted;
+                let v = oData.activityReminderResettable;
+                let e = oData.activityReminderChannel;
+                let d = oData.activityReminderIds;
+
+                if (!z || !d || !q || !m || !v || !e) {
+                    interaction.reply({content: "Error verifying reminder information", ephemeral: true})
+                    return
+                }
+
+                const indx = q.indexOf(rl.id);
+
+                m[indx] = new Date().getMilliseconds(); 
+                d[indx] = newReminderId;
+
+                const reminderEmbed = createOracleEmbed('Activity Reminder' , "Go be active and stuff!", [
+                    {name: 'Next Reminder', value: `<t:${Math.round(new Date(new Date().getTime() + (3600000 * z[indx])).getTime() / 1000)}:t>`},
+                    {name: 'Last Reset By', value: interaction.user.username}
+                ] , "");
+
+                
+                console.log(interaction.message.id);
+                
+                interaction.message.edit({
+                    content: `<@&${q[indx]}>`,
+                    embeds: [reminderEmbed],
+                    components: v[indx] ? [{
+                        type: 1,
+                        components: [
+                            {
+                                type: 2,
+                                style: 2,
+                                label: "Reset Timer",
+                                custom_id: "reset_reminder_" + newReminderId
+                            }
+                        ]
+                    }] : []
+                })
+
+                interaction.reply({content: "**Timer Reset** by <@" + interaction.user.id + ">"})
+
+                await oData.updateOne({
+                    activityReminderRolesTimeLimit: z,
+                    activityReminderTimeStarted: m,
+                    activityReminderResettable: v,
+                    activityReminderChannel: e,
+                    activityReminderIds: d
+                })
+            }else{
+                if (!rl){
+                    interaction.reply({content: "Invalid role selected for reminder", ephemeral: true})
+                }else{
+                    interaction.reply({content: "You must have the mentioned role in order to reset the timer", ephemeral: true})
+                }
+                
+            }
         }
     }
     
@@ -276,12 +640,12 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                             type: 2,
                             style: 1,
                             label: "Enlist!",
-                            custom_id: "enlist_btn"
+                            custom_id: "enlist"
                         }
                     ]});
                 });        
 
-                interaction.reply({content: '*New War Started*', ephemeral: true});
+                interaction.reply({content: '*New War Started and Notification Sent to <#' + (interaction.options.getChannel("notification-channel")?.id || interaction.channelId) + '>*', ephemeral: true});
             }else{
                 interaction.reply({content: '*Insufficient Permissions*', ephemeral: true});
             }
@@ -358,6 +722,15 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 return;
             }
 
+            const r = await Ticket.findOne({
+                author: interaction.user.username,
+                complete: false
+            })
+
+            if (r){
+                await r.deleteOne();
+            }
+
             
 
             if ((interaction.member.roles as GuildMemberRoleManager).cache.some((v) => {return v.id == activeRole})){
@@ -387,24 +760,25 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 name: "logi-support-" + ticketId
             });
 
+            const perms = (interaction.guild.roles.cache.map((v) => {
+                if (v.permissions.has("ManageRoles")){
+                    return {id: v.id, allow: ["ViewChannel"]}
+                }
+
+            }) as any[]).concat([{
+                id: interaction.guild.roles.everyone.id, 
+                deny: ["ViewChannel"]
+            },
+            {
+                id: rl.id, 
+                allow: ["ViewChannel"]
+            }] as any[])
+
             const chnl = await interaction.guild.channels.create({
                 name: "logi-ticket-" + ticketId,
                 type: ChannelType.GuildText,
                 parent: cat.id,
-                permissionOverwrites: [
-                    {
-                        id: interaction.guild.roles.everyone.id, 
-                        deny: ["ViewChannel"]
-                    },
-                    {
-                        id: rl.id, 
-                        allow: ["ViewChannel"]
-                    },
-                    {
-                        id: interaction.guild.roles.highest.id,
-                        allow: ["ViewChannel"]
-                    },
-                ]
+                permissionOverwrites: perms
                 // your permission overwrites or other options here
             });
 
@@ -425,7 +799,8 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 transcript: [],
                 notes: interaction.options.getString('notes'),
                 complete: false,
-                updateEmbed: msg.id
+                updateEmbed: msg.id,
+                closed: false
             });
 
             await oData.updateOne({
@@ -457,7 +832,7 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 */
 
 
-                const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + tckt.location + ")" , "To remove resources from the ticket run lb-remove\n\nIf you're done adding resource requirements, run lb-complete.", 
+                const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + tckt.location + ")" , "To add resources to the ticket run /lb-add\n\nTo remove resources from the ticket run /lb-remove\n\nIf you're done adding resource requirements, run /lb-complete.", 
                     tckt.logisticsTypes?.map((v, i) => {
                     if (!tckt || !tckt.demanded) return {name: "A", value: "A"};
                     return {name: v.toString(), value: tckt.demanded[i].toString()}
@@ -518,7 +893,7 @@ c.on('interactionCreate', async (interaction: Interaction) => {
 
             if (!t) return;
 
-            const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To remove resources from the ticket run lb-remove\n\nIf you're done adding resource requirements, run lb-complete.", 
+            const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To add resources to the ticket run /lb-add\n\nTo remove resources from the ticket run /lb-remove\n\nIf you're done adding resource requirements, run /lb-complete.", 
                 t.logisticsTypes?.map((v, i) => {
                    
                     if (!t || !t.demanded) return {name: "A", value: "A"};
@@ -605,7 +980,7 @@ c.on('interactionCreate', async (interaction: Interaction) => {
 
                 if (!t) return;
 
-                const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To remove resources from the ticket run lb-remove\n\nIf you're done adding resource requirements, run lb-complete.", 
+                const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To add resources to the ticket run /lb-add\n\nTo remove resources from the ticket run /lb-remove\n\nIf you're done adding resource requirements, run /lb-complete.", 
                 t.logisticsTypes?.map((v, i) => {
                     if (!t || !t.demanded) return {name: "A", value: "A"};
                     return {name: v.toString(), value: t.demanded[i].toString()}
@@ -641,10 +1016,8 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 return
             }
 
-            const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To remove resources from the ticket run lb-remove\n\nIf you're done adding resource requirements, run lb-complete.", 
+            const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To add resources to the ticket run /lb-add\n\nTo remove resources from the ticket run /lb-remove\n\nIf you're done adding resource requirements, run /lb-complete.", 
                 t.logisticsTypes?.map((v, i) => {
-                    console.log(v, i);
-                    
                     if (!t.demanded) return {name: "A", value: "A"};
                     return {name: v.toString(), value: t.demanded[i].toString()}
                 }) as {value: string, name: string}[] , "");
@@ -681,22 +1054,33 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 return
             }
 
-            const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "To remove resources from the ticket run lb-remove\n\nIf you're done adding resource requirements, run lb-complete.", 
+            const logiChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , `${t.author} is requesting logistics assistance, help them out by joining this ticket and marking your deliveries. \n\nRequested resources listed below.`, 
                 t.logisticsTypes?.map((v, i) => {
-                    console.log(v, i);
                     
                     if (!t.demanded) return {name: "A", value: "A"};
                     return {name: v.toString(), value: t.demanded[i].toString()}
                 }) as {value: string, name: string}[] , "");
 
-                const ticketChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "Welcome to support ticket " + t.ticketId + ", help out by delivering the requested supplies and then running the **/deliver** command to report your work\n\nThe fields below are automatically updated as deliveries are reported\n\nThis channel will automatically lock when all requirements are fulfilled", 
+                const ticketChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "Welcome to support ticket " + t.ticketId + ", help " + t.author  +" out by delivering the requested supplies and then running the **/deliver** command to report your work\n\nThe fields below are automatically updated as deliveries are reported\n\nThis channel will automatically lock when all requirements are fulfilled", 
                 t.logisticsTypes?.map((v, i) => {
                     if (!t.demanded || !t.delivered) return {name: "A", value: "A"};
                     return {name: v.toString(), value: t.delivered[i].toString() + " / " + t.demanded[i].toString()}
                 }) as {value: string, name: string}[] , "");
 
             
-            await p.messages.fetch(t.updateEmbed).then(msg => (msg as any).edit({embeds: [ticketChannelEmbed]}))
+            await p.messages.fetch(t.updateEmbed).then(msg => (msg as any).edit({embeds: [ticketChannelEmbed], components: [
+                {
+                    type: 1,
+                    components: [
+                        {
+                            type: 2,
+                            style: 1,
+                            label: "Force Resolve Ticket",
+                            custom_id: "force_resolve_logi_ticket_" + t.ticketId
+                        }
+                    ]
+                }
+            ]}))
 
             await t.updateOne({
                 complete: true
@@ -704,9 +1088,9 @@ c.on('interactionCreate', async (interaction: Interaction) => {
             
 
             interaction.client.channels.fetch(oData.logisticsTicketChannel || interaction.channelId).then(async (channel) => {
-                if (!channel) return;
+                if (!channel || !oData) return;
 
-                (channel as any).send({embeds: [logiChannelEmbed], components: [
+                const v = await (channel as any).send({embeds: [logiChannelEmbed], components: [
                     {
                         type: 1,
                         components: [
@@ -718,11 +1102,16 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                             }
                         ]
                     }
-                ]})
+                ]});
+
+                await t.updateOne({
+                    ticketPostEmbed: v.id,
+                    ticketPostChannel: oData.logisticsTicketChannel || interaction.channelId
+                })
             })
 
 
-
+            interaction.reply({content: "Logistics ticket published to <#" + oData.logisticsTicketChannel || interaction.channelId + "> and accessible in <#" + t.channelId + ">", ephemeral: true})
         }else if (interaction.commandName == 'lb-discard'){
             const t = await Ticket.findOne({
                 author: interaction.user.username,
@@ -771,7 +1160,7 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 channelId: interaction.channelId
             })
 
-            if (!t) return;
+            if (!t || !t.logisticsTypes) return;
 
             const ticketChannelEmbed = createOracleEmbed('Logistics Ticket (' + t.location + ")" , "Welcome to support ticket " + t.ticketId + ", help out by delivering the requested supplies and then running the **/deliver** command to report your work\n\nThe fields below are automatically updated as deliveries are reported\n\nThis channel will automatically lock when all requirements are fulfilled", 
                 t.logisticsTypes?.map((v, i) => {
@@ -779,433 +1168,263 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                     return {name: v.toString(), value: t.delivered[i].toString() + " / " + t.demanded[i].toString()}
                 }) as {value: string, name: string}[] , "");
 
-            console.log(t);
-            
-            if (!interaction.channel) return;
+            let fulfilled = true;
 
-            await interaction.channel.messages.fetch(t.updateEmbed).then(msg => (msg as any).edit({embeds: [ticketChannelEmbed]}));
+            for (let i = 0; i < t.logisticsTypes.length; i++) {
+                if (!t.delivered || !t.demanded) continue;
 
-            interaction.reply({content: "**Logged delivery of " + interaction.options.getInteger("amount") + " " + interaction.options.getString("resource") + (interaction.options.getString("resource")?.endsWith("s") ? "" : "s") + " to " + t.location +" by <@" + (interaction.user.id) + ">**"})
-        }
+                if (t.delivered[i] < t.demanded[i]){
+                    fulfilled = false;
+                    break;
+                }
+                
+            }
 
+            if (!interaction.channel || !interaction.channel.isTextBased()) return;
 
-        /*
-        if (interaction.commandName == 'void') {
-            if ((interaction.member.permissions as Readonly<PermissionsBitField>).has(PermissionsBitField.ManageMessages)){
-                const reason = await interaction.options.getString('reason');
-            
-                const staffName = interaction.user.username;
-                let authorName = 'NUL';
-                let channelName = 'NUL';
+            if (fulfilled){
+               const q = c.channels.cache.get(t.channelId);
 
-                let msg = 'NUL';
+               if (q && q.type == ChannelType.GuildText){
 
-                const ch = await interaction.guild.channels.fetch(isolateChannelId(interaction.options.getString('message')));
-
-                await ch.messages.fetch(isolateMessageId(interaction.options.getString('message'))).then((message) => {
-                    console.log("NAME: " + message["author"]["username"]);
-                    msg = message;
-                    
-                    authorName = message["author"]["username"];
-
-                    try{
-                        let str = "\n*Hi! Your message has been voided by a staff member. Please review the rules and try again.*";
-
-                        if (reason) {
-                            str += " \n **Reason:** " + reason;
-                        }
-
-                        message["author"].send(str);
-                    } catch (err) {
-                        console.log("User has DMs disabled");
-                    }
-                    
-                    message.delete();
+                const logiChannelEmbed = createOracleEmbed('Logistics Ticket [COMPLETE] (' + t.location + ") - " + t.ticketId , "**Logistics order complete**, all resources have been delivered to the appropriate location", 
+                    t.logisticsTypes?.map((v, i) => {
+                        if (!t || !t.demanded || !t.delivered) return {name: "A", value: "A"};
+                        return {name: v.toString(), value: t.delivered[i].toString() + " / " + t.demanded[i].toString()}
+                    }) as {value: string, name: string}[] , "");
+                
+                /*
+                await interaction.guild?.channels.edit(q, {
+                    permissionOverwrites: [
+                        {
+                            id: interaction.guild.roles.everyone.id, 
+                            deny: ["ViewChannel"]
+                        },
+                        {
+                            id: t.ticketRoleId, 
+                            deny: ["ViewChannel"]
+                        },
+                        {
+                            id: interaction.guild.roles.highest.id,
+                            allow: ["ViewChannel"]
+                        },
+                    ]
                 });
+                */
 
-                channelName = ch.name;
+                if (t.ticketPostEmbed && t.ticketPostChannel){
+                    const p = await c.channels.fetch(t.ticketPostChannel);
+                    if (!p || !p.isTextBased()) return;
 
-                console.log(authorName);
-                console.log(channelName);
-                console.log(staffName); 
+                    await p.messages.fetch(t.ticketPostEmbed).then(async msg => {
+                        if (!msg) return;
+    
+                        await (msg as any).edit({embeds: [logiChannelEmbed], components: []})
+                    });    
+                }
+               
+               }
 
-                let fields = [{name: 'Voided Message', value: msg['content']}];
+               if (!interaction.guild) return;
 
-                if (reason) {
-                    console.log(reason);
-                    fields.push({name: 'Reason', value: reason});
+               const users = await interaction.guild.members.list();
+
+               const transcriptEmbed = createOracleEmbed('Logistics Ticket (' + t.ticketId + ") - Transcript" , "This ticket was recently closed, here's a transcript of the discussion:\n\n" + (t.transcript.length > 0 ? t.transcript.join("\n\n") : "*No messages were sent*"), 
+                        [] , "");
+
+                for (let i = 0; i < users.size; i++) {
+                    if (users.at(i)?.roles.cache.some((v) => {return v.id == t.ticketRoleId})) {
+                        await users.at(i)?.send({
+                            embeds: [
+                                transcriptEmbed
+                            ]
+                        })
+                    }
                 }
 
-                const voidEmbed = createArgoEmbed('Voided Action', `**Staff:** ${staffName}\n**Author:** ${authorName}\n**Channel:** #${channelName}`, fields);
+                if (oData.logChannel){
+                    const b = await c.channels.fetch(oData.logChannel);
 
-                interaction.client.channels.fetch(configData.logChannelId).then((channel) => {
-                    channel.send({embeds: [voidEmbed]});
-                });        
+                    if (b && b.isTextBased()){
+                        await b.send({
+                            embeds: [
+                                transcriptEmbed
+                            ]
+                        })
+                    }
+                }
 
-                interaction.reply({content: '*Message Voided, User Notified, Log Created*', ephemeral: true});
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
+                const rle = await interaction.guild.roles.fetch(t.ticketRoleId);
+
+                if (rle){
+                    await rle.delete();
+                }
+                
+                if (q){
+                    await q.delete()
+                }
+
+                await t.updateOne({
+                    closed: true
+                });
             }
             
+            
 
-        }else if (interaction.commandName == 'refreshfactions') {
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
+            if (!fulfilled){
+                await interaction.channel.messages.fetch(t.updateEmbed).then(msg => (msg as any).edit({embeds: [ticketChannelEmbed]}));
 
-                
-
+                interaction.reply({content: "**Logged delivery of " + interaction.options.getInteger("amount") + " " + interaction.options.getString("resource") + (interaction.options.getString("resource")?.endsWith("s") ? "" : "s") + " to " + t.location +" by <@" + (interaction.user.id) + ">**"})
             }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'assignfaction') {
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                updateInfo();
+                interaction.reply({content:"Automatically resolving issue, all demands met"})
+            }   
 
-                const user = await interaction.options.getUser('user');
-                const faction = await interaction.options.getString('faction');
-
-                let role = await interaction.guild.roles.fetch(factions[faction]["role"]);
-                console.log(role);
-
-                let removedFaction = "N/A";
-
-                for (let i = 0; i < factionTags.length; i++) {
-                    console.log(factionTags[i]);
-                    console.log(factions[factionTags[i]]);
-
-                    if (factions[factionTags[i]] == undefined) continue;
-
-                    if (factions[factionTags[i]]["owner"] != user.id) continue;
-
-                    await interaction.guild.members.fetch(user.id).then((member) => {
-                        console.log(factions[factionTags[i]]["role"]);
-                        member.roles.remove(factions[factionTags[i]]["role"]);
+        }else if (interaction.commandName == 'start-activity-reminder'){
+            if ((interaction.member.permissions as Readonly<PermissionsBitField>).has("ManageRoles")){
+                if (!oData.activityReminderRoles || !oData.activityReminderRolesTimeLimit || !oData.activityReminderIds || !oData.activityReminderTimeStarted || !oData.activityReminderResettable || !oData.activityReminderChannel){
+                    
+                    await oData.updateOne({
+                        activityReminderRoles: [],
+                        activityReminderRolesTimeLimit: [],
+                        activityReminderTimeStarted: [],
+                        activityReminderResettable: [],
+                        activityReminderChannel: [],
+                        activityReminderIds: []
+                    })
+                    
+                
+                    oData = await OGuildData.findOne({
+                        guildId: oData.guildId
                     });
 
-                    factions[factionTags[i]]["owner"] = "Null";
-                    removedFaction = factionTags[i];
-                }   
+                    if (!oData) return;
+                }
+                const a = interaction.options.getRole("ping-role");
 
-                let authorName = 'NUL';
+                const timePeriod = Math.max(Math.abs(interaction.options.getNumber("reminder-period") || 6), 0.1);
+                const reactToReset = interaction.options.getBoolean("react-to-reset") || false;
+                const reminderChannel = interaction.options.getChannel("channel")?.id || interaction.channelId;
 
-                await interaction.guild.members.fetch(user.id).then((member) => {
-                    member.roles.add(role.id);
-                    factions[faction]["owner"] = user.id;
-                    authorName = member.displayName;
-                });
+                if (!a) return;
 
-                const voidEmbed = createArgoEmbed(authorName + " Assigned to " + faction, `**Staff Member:** ` + interaction.user.displayName, [{name: 'Removed Roles', value: removedFaction}]);
+                const newReminderId = Math.random().toString(36).slice(2, 21);
 
-                interaction.client.channels.fetch(configData.logChannelId).then((channel) => {
-                    channel.send({embeds: [voidEmbed]});
-                });  
+                if (oData.activityReminderRoles?.includes(a.id)){
+                    let q = oData.activityReminderRoles;
+                    let z = oData.activityReminderRolesTimeLimit;
+                    let m = oData.activityReminderTimeStarted;
+                    let v = oData.activityReminderResettable;
+                    let e = oData.activityReminderChannel;
+                    let d = oData.activityReminderIds;
 
-                interaction.reply({content: '*Faction Assigned* | ' + user.displayName + " to " + faction, ephemeral: true});
-                writeConfig();
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'removeassignment') {
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                let removedFaction = "N/A";
-                for (let i = 0; i < factionTags.length; i++) {
-                    if (factions[factionTags[i]]["owner"] != interaction.options.getUser('user').id) continue;
+                    if (!z || !d || !q || !m || !v || !e) return;
 
-                    await interaction.guild.members.fetch(interaction.options.getUser('user').id).then((member) => {
-                        member.roles.remove(factions[factionTags[i]]["role"]);
-                    });
+                    const indx = q.indexOf(a.id);
 
-                    factions[factionTags[i]]["owner"] = "Null";
-                    removedFaction = factionTags[i];
+                    z[indx] = timePeriod * 1000 * 60 * 60;
+                    m[indx] = new Date().getMilliseconds(); 
+                    v[indx] = reactToReset;
+                    e[indx] = reminderChannel;
+                    d[indx] = newReminderId;
+
+
+                    await oData.updateOne({
+                        activityReminderRolesTimeLimit: z,
+                        activityReminderTimeStarted: m,
+                        activityReminderResettable: v,
+                        activityReminderChannel: e,
+                        activityReminderIds: d
+                    })
+
+                    interaction.reply({content: "*Current reminder for <@&" + a.id + "> changed*", ephemeral: true});
+                }else{
+                    let q = oData.activityReminderRoles;
+                    let z = oData.activityReminderRolesTimeLimit;
+                    let m = oData.activityReminderTimeStarted;
+                    let v = oData.activityReminderResettable;
+                    let e = oData.activityReminderChannel;
+                    let d = oData.activityReminderIds;
+
+                    if (!z || !d || !q || !m || !v || !e) return;
+
+                    q.push(a.id);
+                    z.push(timePeriod * 1000 * 60 * 60)
+                    m.push(new Date().getMilliseconds());
+                    v.push(reactToReset);
+                    e.push(reminderChannel);
+                    d.push(newReminderId)
+
+
+                    await oData.updateOne({
+                        activityReminderRoles: q,
+                        activityReminderRolesTimeLimit: z,
+                        activityReminderTimeStarted: m,
+                        activityReminderResettable: v,
+                        activityReminderChannel: e,
+                        activityReminderIds: d
+                    })
+
+                    interaction.reply({content: "*New reminder for <@&" + a.id + "> created*", ephemeral: true});
                 }
 
-                const voidEmbed = createArgoEmbed(interaction.options.getUser('user').displayName + " Faction Assignment Removed", `**Staff Member:** ` + interaction.user.displayName, [{name: 'Removed Roles', value: removedFaction}]);
-
-                interaction.client.channels.fetch(configData.logChannelId).then((channel) => {
-                    channel.send({embeds: [voidEmbed]});
-                });
-
-                writeConfig();
-
-                interaction.reply({content: '*Faction Assignment Removed*', ephemeral: true});
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'viewall') {
-            let str = "";
-            for (let i = 0; i < factionTags.length; i++) {
-                let faction = factions[factionTags[i]];
-
-                console.log(faction);
-                if (faction == undefined) continue;
-                if (faction["owner"] == undefined || faction['owner'] == 'Null') continue;
-
-                let user;
-                let role;
-
-                await interaction.guild.roles.fetch(faction["role"]).then((r) => {
-                    role = r.name;
-                });
-                console.log(role);
-                await interaction.guild.members.fetch(faction["owner"]).then((u) => {
-                    user = u.displayName;
-                });
-
-                str += "\n\n**Faction:** " + faction["name"] + "\n**Tag:** " + factionTags[i] + "\n**Role:** " + role + "\n**Owner:** " + user;
-
                 
-            }
 
-            const voidEmbed = createArgoEmbed("Faction Assignments Overview", str, null, null);
+                async function f(targetTime: Date) {
+                    while (targetTime > new Date()) {
 
-            interaction.channel.send({embeds: [voidEmbed]});
-            interaction.reply({content: '*Faction Assignments Overview Processed*', ephemeral: true});
-        }else if (interaction.commandName == 'accept'){
-            let msg = interaction.options.getString('proposal');
-            
-            let authorName;
-            let channelName;
-            let channelF;
-
-            
-
-            await interaction.guild.channels.fetch(isolateChannelId(msg)).then((channel) => {
-                channelName = channel.name;
-                channelF = channel;
-                
-                channel.messages.fetch(isolateMessageId(msg)).then((message) => {
-                    const voidEmbed = createArgoEmbed('Proposal Accepted', '**Channel:** #' + channelName, [{name: 'Accepted Proposal', value: message.content}], null);
-                    message.author.send({embeds: [voidEmbed]})
-                });
-            });
-
-            await channelF.messages.fetch(isolateMessageId(msg)).then((message) => {authorName = message.author.displayName;});
-
-            const voidEmbed = createArgoEmbed('Proposal Accepted', '**Staff: **' + interaction.user.displayName + '\n**Author:** ' + authorName + '\n**Channel:** #' + channelName, [{name: 'Accepted Proposal', value: msg}]);
-
-            interaction.client.channels.fetch(configData.logChannelId).then((channel) => {
-                channel.send({embeds: [voidEmbed]});
-            });
-
-            interaction.reply({content: '*Proposal Accepted, User Notified, Log Created*', ephemeral: true});
-        }else if (interaction.commandName == 'deny'){
-            let msg = interaction.options.getString('proposal');
-            
-            let authorName;
-            let channelName;
-            let channelF;
-
-            
-
-            await interaction.guild.channels.fetch(isolateChannelId(msg)).then((channel) => {
-                channelName = channel.name;
-                channelF = channel;
-                
-                channel.messages.fetch(isolateMessageId(msg)).then((message) => {
-                    const voidEmbed = createArgoEmbed('Proposal Denied', '**Channel:** #' + channelName, [{name: 'Denied Proposal', value: message.content}], null);
-                    message.author.send({embeds: [voidEmbed]})
-                });
-            });
-
-            await channelF.messages.fetch(isolateMessageId(msg)).then((message) => {authorName = message.author.displayName;});
-
-            const voidEmbed = createArgoEmbed('Proposal Denied', '**Staff: **' + interaction.user.displayName + '\n**Author:** ' + authorName + '\n**Channel:** #' + channelName, [{name: 'Denied Proposal', value: msg}]);
-
-            interaction.client.channels.fetch(configData.logChannelId).then((channel) => {
-                channel.send({embeds: [voidEmbed]});
-            });
-
-            interaction.reply({content: '*Proposal Denied, User Notified, Log Created*', ephemeral: true});
-        }else if (interaction.commandName == 'setlogchannel'){
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                const channel = await interaction.options.getChannel('channel');
-
-                logChannelId = channel.id;
-
-                interaction.reply({content: '*Log Channel Set*', ephemeral: true});
-                writeConfig();
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'addformattedchannel'){
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                const channel = await interaction.options.getChannel('channel');
-
-                formattedChannels.push(channel.name);
-
-                interaction.reply({content: '*Channel Added To List*', ephemeral: true});
-                writeConfig();
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'removeformattedchannel'){
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                const channel = await interaction.options.getChannel('channel');
-
-                formattedChannels.splice(formattedChannels.indexOf(channel.name), 1);
-
-                interaction.reply({content: '*Channel Removed From List*', ephemeral: true});
-                writeConfig();
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if(interaction.commandName == 'viewallformattedchannels'){
-            let str = "";
-            for (let i = 0; i < formattedChannels.length; i++) {
-                str += "\n\n**Channel:** #" + formattedChannels[i];
-            }
-
-            const voidEmbed = createArgoEmbed("Formatted Channel List", str, null, null);
-
-            interaction.channel.send({embeds: [voidEmbed]});
-            interaction.reply({content: '*Formatted Channel List Processed*', ephemeral: true});
-        } else if (interaction.commandName == 'addfaction'){
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                const name = await interaction.options.getString('name');
-                const tag = await interaction.options.getString('tag');
-                const color = await interaction.options.getString('color');
-
-                factions[tag] = {name: name, color: color, owner: "Null"};
-
-                interaction.reply({content: '*Faction Added*', ephemeral: true});
-                factionTags.push(tag);
-                factions["list"] = factionTags;
-                writeConfig();
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'removefaction'){
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                const tag = await interaction.options.getString('tag');
-
-                delete factions[tag];
-
-                interaction.reply({content: '*Faction Removed*', ephemeral: true});
-                writeConfig();
-            }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
-            }
-        }else if (interaction.commandName == 'listfactions'){
-            let str = "";
-            for (let i = 0; i < factionTags.length; i++) {
-                let faction = factions[factionTags[i]];
-
-                if (faction == undefined) continue;
-
-                str += "\n\n**Faction:** " + faction["name"] + "\n**Tag:** " + factionTags[i] + "\n**Color:** " + faction["color"];
-            }
-
-            const voidEmbed = createArgoEmbed("Faction List", str, null, null);
-
-            interaction.channel.send({embeds: [voidEmbed]});
-            interaction.reply({content: '*Faction List Processed*', ephemeral: true});
-        }else if (interaction.commandName == 'editfaction'){
-            const name = await interaction.options.getString('name');
-            const tag = await interaction.options.getString('tag');
-            const color = await interaction.options.getString('color');
-            const description = await interaction.options.getString('description');
-
-            if (name){
-                factions[tag]["name"] = name;
-            }
-
-            if (color){
-                factions[tag]["color"] = color;
-            }
-
-            if (description){
-                factions[tag]["description"] = description;
-            }
-
-            interaction.reply({content: '*Faction Edited*', ephemeral: true});
-            writeConfig();
-            updateRoles(interaction);
-        }else if (interaction.commandName == 'manualroleupdate'){ 
-            let b  = false;
-            let member = await interaction.guild.members.fetch(interaction.user.id);
-            
-            const list = await interaction.client.guilds.cache.get(process.env.GUILD_ID).members.fetch();
-
-            for (u of list){
-                for (let i = 0; i < factionTags.length; i++) {
-                    if (factions[factionTags[i]]["owner"] == undefined) continue;
-                    if (factions[factionTags[i]]["owner"] == "Null") continue;
-
-                    let user = u[1].user;
-    
-                    console.log(factions[factionTags[i]]["owner"] + " | " + user.id);
-                    if (factions[factionTags[i]]["owner"] == user.id) {
-                        b = true;
-                        console.log("ADD PLAYER ROLE");
-                        
-                        
-                        await interaction.guild.members.fetch(user.id).then((member) => {
-                            if (member.roles.cache.has(playerRole) && !member.roles.cache.has(spectatorRole)) return;
-    
-                            member.roles.add(playerRole);
-                            member.roles.remove(spectatorRole);
-                            
-                            console.log(member.user.username);
-                        });
-
-                        
                     }
-    
-                    if (!b){
-                        console.log("REMOVE PLAYER ROLE");
 
+                    const w = await OGuildData.findById(oData?.id);
+                    
+                    if (!w) return;
+
+                    if (!w.activityReminderIds?.includes(newReminderId)){
+                        console.log("Reminder ID Not Found: Cancelling reminder (" + newReminderId + ")");
                         
-
-                        await interaction.guild.members.fetch(user.id).then((member) => {
-                            if (member.roles.cache.has(spectatorRole) && !member.roles.cache.has(playerRole)) return;
-    
-                            member.roles.add(spectatorRole);
-                            member.roles.remove(playerRole);
-                            
-                        });
-
-                        
+                        return;
                     }
+
+
+                    const reminderEmbed = createOracleEmbed('Activity Reminder' , "Go be active and stuff!", [
+                        {name: 'Next Reminder', value: `<t:${Math.round(new Date(new Date().getTime() + (3600000 * timePeriod)).getTime() / 1000)}:t>`},
+                        {name: 'Last Reset By', value: "No one"}
+                    ] , "");
+
+                    const u = await c.channels.fetch(reminderChannel);
+
+                    if (u && u.isTextBased() && a){
+                        console.log("Sending reminder message");
+                        
+                        await u.send({
+                            content: "<@&" + a.id + ">",
+                            embeds: [
+                                reminderEmbed
+                            ],
+                            components: reactToReset ? [{
+                                type: 1,
+                                components: [
+                                    {
+                                        type: 2,
+                                        style: 2,
+                                        label: "Reset Timer",
+                                        custom_id: "reset_reminder_" + newReminderId
+                                    }
+                                ]
+                            }] : []
+                        })
+                    }
+
+                    f(new Date(new Date().getTime() + (3600000 * timePeriod))); 
                 }
-            }
 
-            
-        }else if(interaction.commandName == 'debug'){
-            if (interaction.member.permissions.has(PermissionsBitField.ManageRoles)){
-                let b  = false;
-                let member = await interaction.guild.members.fetch(interaction.user.Id);
-                console.log(member.roles);
-                for (let i = 0; i < factionTags.length; i++) {
-                    if (factions[factionTags[i]]["owner"] == undefined) continue;
-
-                    console.log(factions[factionTags[i]]["owner"] + " | " + context.user.Id);
-                    if (factions[factionTags[i]]["owner"] == context.user.Id) {
-                        b = true;
-                        await interaction.guild.members.fetch(interaction.user.Id).then((member) => {
-                            if (member.roles.has(playerRole)) return;
-
-                            member.roles.add(playerRole);
-                            member.roles.remove(spectatorRole);
-                        });
-                    }
-
-                    if (!b){
-                        await interaction.guild.members.fetch(interaction.user.Id).then((member) => {
-                            if (member.roles.has(spectatorRole)) return;
-
-                            member.roles.add(spectatorRole);
-                            member.roles.remove(playerRole);
-                        });
-                    }
-                }
-                
+                f(new Date());
             }else{
-                interaction.reply({content: '*You do not have permission to use this command*', ephemeral: true});
+                interaction.reply({content: '*Invalid permissions to run this command*'});
             }
         }
-            */
-
-    } catch (error) {
+    } catch (error: any) {
         console.log(error);
+        interaction.reply({content: "Error occured:\n\n" + error.message, ephemeral: true})
     }
 });
 

@@ -48,95 +48,6 @@ export async function registerCommands(guildId: string) {
         ]
     }
     
-    const c_createNewLogisticsTicket = {
-        name: 'create-logistics-ticket',
-        description: 'Start logistics ticket builder',
-        options: [
-            {
-                name: 'location',
-                description: 'Location for delivery of logistics',
-                type: ApplicationCommandOptionType.String,
-                required: true
-            },
-        ]
-    }
-    
-    const c_reportLogisticsDelivery = {
-        name: 'report-logi-delivery',
-        description: 'Report logistics delivery towards a ticket',
-        options: [
-            {
-                name: 'quantity',
-                description: 'How many units of selected logistics item were delivered',
-                type: ApplicationCommandOptionType.Integer,
-                required: true
-            },
-            {
-                name: 'logi-ticket-channel',
-                description: 'The channel of the logistics ticket (by default current channel is selected)',
-                type: ApplicationCommandOptionType.Channel,
-                required: false
-            }
-        ]
-    }
-    
-    const c_editLogisticsTicket = {
-        name: 'modify-logistics-ticket',
-        description: 'Change logistics ticket details',
-        options: [
-            {
-                name: 'ticket-channel',
-                description: 'Channel of logistics ticket (defaults to current channel)',
-                type: ApplicationCommandOptionType.Channel,
-                required: false
-            },
-            {
-                name: 'logi-type',
-                description: 'Type of logistics required',
-                type: ApplicationCommandOptionType.String,
-                choices: [
-                    { type:ApplicationCommandOptionType.String, name: 'Equipment', value: 'equipment' },
-                    { type:ApplicationCommandOptionType.String, name: 'Ammo', value: 'ammo' },
-                    { type:ApplicationCommandOptionType.String, name: 'Resource', value: 'resources' },
-                    { type:ApplicationCommandOptionType.String, name: 'Delivery', value: 'delivery' },
-                ],
-                required: false
-            },
-            {
-                name: 'quantity',
-                description: 'How many units of selected logistics item required',
-                type: ApplicationCommandOptionType.Integer,
-                required: false
-            },
-            {
-                name: 'location',
-                description: 'Location for delivery of logistics',
-                type: ApplicationCommandOptionType.String,
-                required: false
-            },
-        ]
-    }
-    
-    
-    const c_resolveTicket = {
-        name: 'resolve-ticket',
-        description: 'Resolve logistics/new-user ticket at specified channel (current channel by default)',
-        options: [
-            {
-                name: 'note',
-                description: 'Note to add to the archive log',
-                type: ApplicationCommandOptionType.String,
-                required: true
-            },
-            {
-                name: 'ticket-channel',
-                description: 'Channel of logistics ticket (defaults to current channel)',
-                type: ApplicationCommandOptionType.Channel,
-                required: false
-            },
-        ]
-    }
-    
     const c_startActivityReminder = {
         name: 'start-activity-reminder',
         description: 'Start activity reminder in channel (by default current channel)',
@@ -144,7 +55,7 @@ export async function registerCommands(guildId: string) {
             {
                 name: 'ping-role',
                 description: 'Role to ping when reminder runs',
-                type: ApplicationCommandOptionType.Channel,
+                type: ApplicationCommandOptionType.Role,
                 required: true
             },
             {
@@ -283,6 +194,11 @@ export async function registerCommands(guildId: string) {
         name: 'lb-discard',
         description: 'Discard current logistics request',
     }
+
+    const c_clearAllTickets = {
+        name: 'clear-all-tickets',
+        description: 'Clear all currently existing tickets',
+    }
     
     
     
@@ -290,11 +206,7 @@ export async function registerCommands(guildId: string) {
     const cList: any[] = [
         c_startNewWar,
         c_setNewUserTicketChannel,
-        c_resolveTicket,
         c_setLogisticsTicketChannel,
-        c_createNewLogisticsTicket,
-        c_reportLogisticsDelivery,
-        c_editLogisticsTicket,
         c_startActivityReminder,
         c_stopActivityReminder,
         c_setActiveRole,
