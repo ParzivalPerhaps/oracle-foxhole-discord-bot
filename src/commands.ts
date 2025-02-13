@@ -10,7 +10,7 @@ export async function registerCommands(guildId: string) {
             {
                 name: 'war-number',
                 description: 'Number of war',
-                type: ApplicationCommandOptionType.Integer,
+                type: ApplicationCommandOptionType.String,
                 required: true
             },
             {
@@ -78,16 +78,29 @@ export async function registerCommands(guildId: string) {
             }
         ]
     }
+
+    const c_createNewLogisticsTicket = {
+        name: 'create-logistics-ticket',
+        description: 'Start logistics ticket builder',
+        options: [
+            {
+                name: 'location',
+                description: 'Location for delivery of logistics',
+                type: ApplicationCommandOptionType.String,
+                required: true
+            },
+        ]
+    }
     
     const c_stopActivityReminder = {
         name: 'stop-activity-reminder',
-        description: 'Stop activity reminder in channel (by default current channel)',
+        description: 'Stop activity reminder for specified role',
         options: [
             {
-                name: 'channel',
-                description: 'Channel to stop reminders in',
-                type: ApplicationCommandOptionType.Channel,
-                required: false
+                name: 'role',
+                description: 'Role whose activity reminder to stop',
+                type: ApplicationCommandOptionType.Role,
+                required: true
             }
         ]
     }
@@ -217,7 +230,8 @@ export async function registerCommands(guildId: string) {
         c_logisticsBuilderCompleteRequest,
         c_logisticsBuilderViewRequest,
         c_logisticsBuilderDiscrdRequest,
-        c_deliver
+        c_deliver,
+        c_createNewLogisticsTicket
     ];
 
     

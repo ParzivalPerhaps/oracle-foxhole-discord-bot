@@ -9,7 +9,7 @@ import { Types } from "mongoose";
 import Ticket from "./models/Ticket";
 const token = process.env.TOKEN;
 
-const version = "0.1.20";
+const version = "0.1.25";
 
 mongoose.connect(process.env.MONGO_CONNECTION_URI).then(() => {
 
@@ -31,10 +31,14 @@ async function checkGuild(context: Interaction | Message) {
         oData = await OGuildData.create({
             guildId : context.guildId,
             managementRoles : [],
-            newUserTicketChannel : "-1",
-            currentWar : currentWarNumber,
+            newUserTicketChannel : " ",
+            currentWar : currentWarNumber.toString(),
             tickets: [],
-            lastUsedVersion: version
+            lastUsedVersion: version,
+            logisticsTicketChannel : " ",
+            activeRole: " ",
+            inactiveRole: " ",
+            ticketCategory: " ",
         })
     } else if (oData && context.guildId && oData.lastUsedVersion != version){
         await registerCommands(context.guildId);
@@ -42,7 +46,82 @@ async function checkGuild(context: Interaction | Message) {
         await oData.updateOne({
             lastUsedVersion: version
         })
+
+        /*
+
+        if (oData && oData.activityReminderRoles && oData.activityReminderIds && oData.activityReminderChannel && oData.activityReminderResettable && oData.activityReminderTimeStarted && oData.activityReminderRolesTimeLimit){
+            for (let i = 0; i < oData.activityReminderRoles.length; i++) {
+                const rl = oData.activityReminderRoles[i];
+    
+                
+                async function f(targetTime: Date) {
+                    while (targetTime > new Date()) {
+    
+                    }
+    
+                    const w = await OGuildData.findById(oData?.id);
+                    
+                    if (!w || !oData || !oData.activityReminderIds || !oData.activityReminderChannel || oData.activityReminderResettable || !oData.activityReminderRolesTimeLimit) return;
+    
+                    if (!w.activityReminderIds?.includes(oData.activityReminderIds[i])){
+                        console.log("Reminder ID Not Found: Cancelling reminder (" + oData.activityReminderIds[i] + ")");
+                        
+                        return;
+                    }
+    
+                    let j = w.activityReminderTimeStarted;
+    
+                    if (!j) return;
+    
+                    j[w.activityReminderIds.indexOf(oData.activityReminderIds[i])] = new Date().getTime();
+    
+                    await w.updateOne({
+                        activityReminderTimeStarted: j
+                    })
+    
+                    const reminderEmbed = createOracleEmbed('Activity Reminder' , "Go be active and stuff!", [
+                        {name: 'Next Reminder', value: `<t:${Math.round(new Date(new Date().getTime() + (3600000 * oData.activityReminderRolesTimeLimit[i])).getTime() / 1000)}:t>`},
+                        {name: 'Last Reset By', value: "No one"}
+                    ] , "");
+    
+                    const u = await c.channels.fetch(oData.activityReminderChannel[i]);
+    
+                    if (u && u.isTextBased() && rl && oData.activityReminderResettable){
+                        console.log("Sending reminder message");
+                        
+                        await u.send({
+                            content: "<@&" + rl + ">",
+                            embeds: [
+                                reminderEmbed
+                            ],
+                            components: oData.activityReminderResettable[i] ? [{
+                                type: 1,
+                                components: [
+                                    {
+                                        type: 2,
+                                        style: 2,
+                                        label: "Reset Timer",
+                                        custom_id: "reset_reminder_" + oData.activityReminderIds[i]
+                                    }
+                                ]
+                            }] : []
+                        })
+                    }
+    
+                    f(new Date(new Date().getTime() + (3600000 * oData.activityReminderRolesTimeLimit[i]))); 
+                }
+    
+                if (oData.activityReminderTimeStarted){
+                    f(new Date(oData.activityReminderTimeStarted[i] + (3600000 * oData.activityReminderRolesTimeLimit[i])))
+                }
+                
+            }
+        }
+            */
     }
+    
+   
+        
 }
 
 let createTicket = async (type: "logistics" | "recruit", users: User[], interaction: Interaction) => {
@@ -177,6 +256,8 @@ c.on('guildMemberAdd', async member => {
             const perms = (member.guild.roles.cache.map((v) => {
                 if (v.permissions.has("ManageRoles")){
                     return {id: v.id, allow: ["ViewChannel"]}
+                }else{
+                    return {id: v.id, deny: ["ViewChannel"]}
                 }
 
             }) as any[]).concat([{
@@ -262,6 +343,9 @@ c.on('messageCreate', async (msg: Message) => {
 
 c.on('interactionCreate', async (interaction: Interaction) => {
     if (!(interaction.isChatInputCommand() || interaction.isButton()) || !interaction.guildId) return;
+
+    console.log(interaction);
+    
 
     await checkGuild(interaction);
     let oData = await OGuildData.findOne({ guildId: interaction.guildId });
@@ -543,7 +627,7 @@ c.on('interactionCreate', async (interaction: Interaction) => {
 
                 const indx = q.indexOf(rl.id);
 
-                m[indx] = new Date().getMilliseconds(); 
+                m[indx] = new Date().getTime(); 
                 d[indx] = newReminderId;
 
                 const reminderEmbed = createOracleEmbed('Activity Reminder' , "Go be active and stuff!", [
@@ -635,14 +719,17 @@ c.on('interactionCreate', async (interaction: Interaction) => {
 
                 interaction.client.channels.fetch(interaction.options.getChannel("notification-channel")?.id || interaction.channelId).then((channel) => {
                     if (!channel) return;
-                    (channel as any).send({embeds: [voidEmbed], components: [
-                        {
-                            type: 2,
-                            style: 1,
-                            label: "Enlist!",
-                            custom_id: "enlist"
-                        }
-                    ]});
+                    (channel as any).send({embeds: [voidEmbed], components: [{
+                        type: 1,
+                        components: [
+                            {
+                                type: 2,
+                                style: 2,
+                                label: "Enlist!",
+                                custom_id: "enlist"
+                            }
+                        ]
+                    }] });
                 });        
 
                 interaction.reply({content: '*New War Started and Notification Sent to <#' + (interaction.options.getChannel("notification-channel")?.id || interaction.channelId) + '>*', ephemeral: true});
@@ -650,7 +737,7 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 interaction.reply({content: '*Insufficient Permissions*', ephemeral: true});
             }
         }else if (interaction.commandName == 'set-active-role'){
-            if ((interaction.member.permissions as Readonly<PermissionsBitField>).has((PermissionsBitField as any).ManageMessages)){
+            if ((interaction.memberPermissions?.has("ManageChannels"))){
                 const rl = interaction.options.getRole("role");
                 
                 if (!rl){
@@ -733,14 +820,14 @@ c.on('interactionCreate', async (interaction: Interaction) => {
 
             
 
-            if ((interaction.member.roles as GuildMemberRoleManager).cache.some((v) => {return v.id == activeRole})){
+            if (!(interaction.member.roles as GuildMemberRoleManager).cache.some((v) => {return v.id == activeRole})){
                 interaction.reply({content: `*You must be enlisted to start a logistics ticket, enlist by running the **/enlist command***`, ephemeral: true});
                 return;
             }
 
             if (!interaction.guild) return;
 
-            let cat = interaction.client.channels.cache.find((v) => {return v.type == ChannelType.GuildCategory && v.name == "Oracle Logi Tickets"});
+            let cat = interaction.guild.channels.cache.find((v) => {return v.type == ChannelType.GuildCategory && v.name == "Oracle Logi Tickets"});
 
             if (!cat){
                 cat = await interaction.guild.channels.create({
@@ -748,6 +835,10 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                     type: ChannelType.GuildCategory,
                     // your permission overwrites or other options here
                 });
+
+                if (!cat){
+                    interaction.reply({content:"*Error: Unable to create Logi Ticket Category*", ephemeral: true})
+                }
             }
 
             let ticketId = Math.random().toString(36).slice(2, 6);
@@ -774,11 +865,20 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 allow: ["ViewChannel"]
             }] as any[])
 
+            const prm: any[] = [{
+                id: interaction.guild.roles.everyone.id, 
+                deny: ["ViewChannel"]
+            },
+            {
+                id: rl.id, 
+                allow: ["ViewChannel"]
+            }]
+
             const chnl = await interaction.guild.channels.create({
                 name: "logi-ticket-" + ticketId,
                 type: ChannelType.GuildText,
                 parent: cat.id,
-                permissionOverwrites: perms
+                permissionOverwrites: prm
                 // your permission overwrites or other options here
             });
 
@@ -1384,6 +1484,15 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                         return;
                     }
 
+                    let j = w.activityReminderTimeStarted;
+
+                    if (!j) return;
+
+                    j[w.activityReminderIds.indexOf(newReminderId)] = new Date().getTime();
+
+                    await w.updateOne({
+                        activityReminderTimeStarted: j
+                    })
 
                     const reminderEmbed = createOracleEmbed('Activity Reminder' , "Go be active and stuff!", [
                         {name: 'Next Reminder', value: `<t:${Math.round(new Date(new Date().getTime() + (3600000 * timePeriod)).getTime() / 1000)}:t>`},
@@ -1420,6 +1529,87 @@ c.on('interactionCreate', async (interaction: Interaction) => {
                 f(new Date());
             }else{
                 interaction.reply({content: '*Invalid permissions to run this command*'});
+            }
+        } else if (interaction.commandName == 'stop-activity-reminder') {
+            if (interaction.memberPermissions?.has("ManageChannels")){
+                const rl = interaction.options.getRole('role');
+                
+                if (!rl) {
+                    interaction.reply({content: "*Error: Unable to find role*", ephemeral: true})
+                    return;
+                }
+                
+                let q = oData.activityReminderRoles;
+                let z = oData.activityReminderRolesTimeLimit;
+                let m = oData.activityReminderTimeStarted;
+                let v = oData.activityReminderResettable;
+                let e = oData.activityReminderChannel;
+                let d = oData.activityReminderIds;
+
+                if (!z || !d || !q || !m || !v || !e) {
+                    interaction.reply({content: "*Role is not currently assigned reminder*", ephemeral: true})
+                    return
+                };
+
+                const index = q.indexOf(rl.id);
+
+                q = q.filter((n, i) => {return i !== index});
+                z = z.filter((n, i) => {return i !== index});
+                m = m.filter((n, i) => {return i !== index});
+                v = v.filter((n, i) => {return i !== index});
+                e = e.filter((n, i) => {return i !== index});
+                d = d.filter((n, i) => {return i !== index});
+                
+
+
+                await oData.updateOne({
+                    activityReminderRoles: q,
+                    activityReminderRolesTimeLimit: z,
+                    activityReminderTimeStarted: m,
+                    activityReminderResettable: v,
+                    activityReminderChannel: e,
+                    activityReminderIds: d
+                })
+
+                interaction.reply({content: "*Reminder for <@&" + rl.id + "> cancelled*", ephemeral: true});
+            }else{
+                interaction.reply({content: '*Invalid permissions to run this command*', ephemeral: true});
+            }
+        }else if (interaction.commandName == 'set-logi-ticket-channel'){
+            if (interaction.memberPermissions?.has("ManageChannels")){
+                const q = interaction.options.getChannel('channel');
+
+                if (!q){
+                    interaction.reply({content: "*Error: Invalid channel selected*", ephemeral: true});
+
+                    return;
+                }
+
+                await oData.updateOne({
+                    logisticsTicketChannel: q.id,
+                });
+
+                interaction.reply({content: "*Updated logi ticket channel to <# " + (q.id)  +">*", ephemeral: true});
+            }else{
+                interaction.reply({content: '*Invalid permissions to run this command*', ephemeral: true});
+            }
+        }else if (interaction.commandName == 'set-recruit-ticket-channel'){
+            if (interaction.memberPermissions?.has("ManageChannels")){
+                const q = interaction.options.getChannel('channel');
+
+                if (!q){
+                    interaction.reply({content: "*Error: Invalid channel selected*", ephemeral: true});
+
+                    return;
+                }
+
+                await oData.updateOne({
+                    newUserTicketChannel: q.id,
+                });
+
+                interaction.reply({content: "*Updated new user ticket channel to <# " + (q.id)  +">*", ephemeral: true});
+            }else{
+                interaction.reply({content: '*Invalid permissions to run this command*', ephemeral: true});
             }
         }
     } catch (error: any) {

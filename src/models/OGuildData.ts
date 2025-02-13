@@ -6,7 +6,7 @@ const oGuildData = new Schema({
     managementRoles : { type: [String], required: true },
     newUserTicketChannel : { type: String, required: true },
     logisticsTicketChannel : { type: String, required: true },
-    currentWar : { type: Number, required: true },
+    currentWar : { type: String, required: true },
     activeRole: {type: String, required: true},
     inactiveRole: {type: String, required: true},
     ticketCategory: {type: String, required: true},
